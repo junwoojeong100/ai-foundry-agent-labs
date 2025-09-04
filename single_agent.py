@@ -36,7 +36,7 @@ def main():
         client.agents.messages.create(
             thread_id=thread.id,
             role="user",
-            content="직선 y = 4x + 9 의 그래프를 그려 PNG로 보여줘."
+            content="직선 y = 4x + 9 의 그래프를 그려줘."
         )
 
         # 4) 실행(run) 처리

@@ -158,13 +158,56 @@ The bridge will:
 - Handle tool calls by invoking the MCP tools
 - Print the conversation
 
-## Lab 4: Agent-to-Agent(Connected Agents)
-- 파일: `a2a_connected_agents.py`
-- 목적: 메인 에이전트가 Connected Agent Tool로 서브 에이전트(Writer)를 호출
-- 실행
+## Lab 4: Agent-to-Agent Orchestrator (Remote A2A)
+원격 A2A HTTP 서버(Title / Outline 등)를 Orchestrator 에이전트가 발견하고 라우팅하는 패턴을 실습합니다.
+
+### Orchestrator 구조
+- Orchestrator 에이전트: FunctionTool(`delegate_to_agent`) 호출 → 원격 에이전트 선택
+- 원격 에이전트 서버: A2A 프로토콜로 `AgentCard`/`AgentSkill` 제공 (Starlette + uvicorn)
+- 라우팅 로직: `requires_action` 상태에서 delegate_to_agent 호출 파라미터 분석 후 HTTP 전송 → 응답을 tool output으로 제출
+
+### 구성 파일
+- 파일: `a2a_orchestrator.py`
+- 원격 서버: `a2a_servers/title_agent/server.py`, `a2a_servers/outline_agent/server.py`
+
+### 목적
+- 다수의 특화 에이전트를 느슨하게(HTTP) 연결하는 Orchestrator 패턴 이해
+- 모델이 직접 어떤 원격 에이전트를 사용할지 판단하고 tool call 형태로 요청
+
+#### 실행 순서 (필수 프로세스)
+Terminal 1 (Title Agent)
 ```zsh
-python a2a_connected_agents.py
+source .env
+export TITLE_AGENT_PORT=8001
+python -m a2a_servers.title_agent.server
 ```
+Terminal 2 (Outline Agent)
+```zsh
+source .env
+export OUTLINE_AGENT_PORT=8002
+python -m a2a_servers.outline_agent.server
+```
+Terminal 3 (Orchestrator)
+```zsh
+source .env
+export REMOTE_AGENT_URLS="http://localhost:8001,http://localhost:8002"
+python a2a_orchestrator.py
+```
+
+필수 환경 변수:
+- `PROJECT_ENDPOINT`, `MODEL_DEPLOYMENT_NAME`
+선택/라우팅: `REMOTE_AGENT_URLS` (또는 `TITLE_AGENT_URL`, `OUTLINE_AGENT_URL`)
+
+정상 로그 기대:
+- Discovered agent ... (각 서버)
+- Available remote agents: ...
+- Routed to '...'
+- 마지막에 최종 응답 출력 후 orchestrator 삭제 로그
+
+문제 해결(핵심):
+- No remote agents → URL env 미설정 또는 서버 미기동
+- Failed to resolve AgentCard → 서버 포트/health 확인(`curl http://localhost:8001/health`)
+- Unknown agent → 모델이 다른 이름 사용 → Orchestrator instructions에 발견된 이름 포함됨 확인
 
 ## 문제 해결
 - 권한 오류: 프로젝트 범위 Azure AI User 역할을 확인하세요.
