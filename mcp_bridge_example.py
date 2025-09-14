@@ -77,7 +77,10 @@ async def main_async() -> None:
             agent = client.create_agent(
                 model=MODEL_DEPLOYMENT_NAME,
                 name="mcp-bridge",
-                instructions="You can call the provided tools which are bridged to a local MCP server.",
+                instructions=(
+                    "이 에이전트는 로컬 MCP 서버와 브리지된 도구들을 사용할 수 있습니다. "
+                    "필요하면 해당 도구(function)를 호출하여 정보를 얻고, 결과를 바탕으로 사용자 질문에 답변하세요."
+                ),
                 tools=azure_tools,
             )
 
@@ -88,8 +91,8 @@ async def main_async() -> None:
                 thread_id=thread.id,
                 role="user",
                 content=(
-                    "Using your tools, get the current weather forecast summary for San Francisco, CA "
-                    "(lat 37.7749, lon -122.4194). Include the next two periods if available."
+                    "제공된 도구를 사용하여 샌프란시스코(San Francisco, CA: 위도 37.7749, 경도 -122.4194)의 "
+                    "현재 일기예보 요약을 알려주세요. 가능하다면 다음 두 개 기간(period)의 예보도 함께 포함해 주세요."
                 ),
             )
 
