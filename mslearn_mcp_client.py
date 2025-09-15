@@ -50,14 +50,17 @@ class MSLearnMCPClient:
         
         try:
             # MCP 서버 연결
+            print(f"🔗 MCP 서버에 연결 중: {self.mcp_server_url}")
             async with streamablehttp_client(self.mcp_server_url) as (read, write, _):
                 async with ClientSession(read, write) as mcp_session:
                     # MCP 세션 초기화
+                    print("⚡ MCP 연결 및 도구 준비 중...")
                     await mcp_session.initialize()
                     
                     # 사용 가능한 도구 목록 가져오기
                     tools_response = await mcp_session.list_tools()
                     azure_tools = self._convert_to_azure_tools(tools_response.tools)
+                    print(f"✅ MCP 도구 준비 완료 ({len(azure_tools)}개 도구)")
                     
                     # Azure AI Agents 클라이언트 생성
                     client = AgentsClient(
@@ -76,17 +79,17 @@ class MSLearnMCPClient:
                         ),
                         tools=azure_tools,
                     )
+                    print("✅ 에이전트 준비 완료")
                     
                     try:
-                        # 대화 스레드 생성 및 메시지 추가
+                        # 대화 시작
+                        print("💬 대화 시작...")
                         thread = client.threads.create()
                         client.messages.create(
                             thread_id=thread.id,
                             role="user",
                             content=user_message
                         )
-                        
-                        # 실행 시작
                         run = client.runs.create(thread_id=thread.id, agent_id=agent.id)
                         
                         # 도구 호출 처리
@@ -104,6 +107,7 @@ class MSLearnMCPClient:
                             pass
                             
         except Exception as e:
+            print(f"❌ 오류 발생: {str(e)}")
             return f"오류가 발생했습니다: {str(e)}"
     
     def _convert_to_azure_tools(self, mcp_tools: List[Any]) -> List[Dict[str, Any]]:
@@ -135,8 +139,10 @@ class MSLearnMCPClient:
     ) -> str:
         """도구 호출을 처리하고 최종 응답을 반환"""
         
-        max_iterations = 10
+        max_iterations = 30  # 충분한 시간 확보
         iteration = 0
+        
+        print(f"🔄 에이전트 실행 모니터링 시작 (최대 {max_iterations}회)")
         
         while iteration < max_iterations:
             iteration += 1
@@ -145,15 +151,23 @@ class MSLearnMCPClient:
             run = client.runs.get(thread_id=thread_id, run_id=run_id)
             
             if run.status in ("queued", "in_progress"):
+                # 5회마다 또는 15회 이상에서만 로그 출력
+                if iteration % 5 == 0 or iteration > 15:
+                    print(f"⏳ 에이전트 처리 중... ({iteration}회)")
                 await asyncio.sleep(1.0)
                 continue
             
             elif run.status == "requires_action":
+                print("🛠️ 도구 호출 필요")
                 # 도구 호출 실행
                 tool_calls = run.required_action.submit_tool_outputs.tool_calls
+                print(f"📞 호출할 도구 수: {len(tool_calls)}")
                 tool_outputs = []
                 
-                for tool_call in tool_calls:
+                for i, tool_call in enumerate(tool_calls, 1):
+                    if i == 1:  # 첫 번째 도구만 로그
+                        print(f"  🔧 {tool_call.function.name} 실행 중...")
+                    
                     output = await self._execute_mcp_tool(
                         mcp_session, tool_call
                     )
@@ -169,10 +183,11 @@ class MSLearnMCPClient:
                     tool_outputs=tool_outputs,
                 )
                 
-                await asyncio.sleep(1.0)
+                await asyncio.sleep(0.5)  # 대기 시간 단축
                 continue
             
             elif run.status == "completed":
+                print("🎉 실행 완료!")
                 # 완료된 경우 최종 응답 반환
                 messages = client.messages.list(thread_id=thread_id)
                 assistant_messages = [
@@ -181,15 +196,41 @@ class MSLearnMCPClient:
                 ]
                 
                 if assistant_messages:
-                    return assistant_messages[-1].text_messages[-1].text.value
+                    final_response = assistant_messages[-1].text_messages[-1].text.value
+                    return final_response
                 else:
                     return "응답을 생성할 수 없습니다."
             
             else:
                 # 실패하거나 기타 상태
+                print(f"❌ 실행 실패 또는 기타 상태: {run.status}")
+                if hasattr(run, 'last_error') and run.last_error:
+                    print(f"   🔍 오류 세부사항: {run.last_error}")
+                    print(f"   📋 오류 코드: {getattr(run.last_error, 'code', 'N/A')}")
+                    print(f"   📝 오류 메시지: {getattr(run.last_error, 'message', 'N/A')}")
+                
+
+                
                 return f"실행이 실패했습니다. 상태: {run.status}"
         
-        return "최대 반복 횟수를 초과했습니다."
+        # 최대 반복 횟수 초과 시 마지막 상태 확인
+        final_run = client.runs.get(thread_id=thread_id, run_id=run_id)
+        print(f"⚠️ 최대 반복 횟수 초과 (마지막 상태: {final_run.status})")
+        
+        # 마지막 상태가 completed라면 응답 가져오기 시도
+        if final_run.status == "completed":
+            print("🎯 마지막 순간에 완료됨! 응답 가져오는 중...")
+            messages = client.messages.list(thread_id=thread_id)
+            assistant_messages = [
+                msg for msg in messages 
+                if msg.role == "assistant" and msg.text_messages
+            ]
+            
+            if assistant_messages:
+                final_response = assistant_messages[-1].text_messages[-1].text.value
+                return final_response
+        
+        return f"최대 반복 횟수({max_iterations})를 초과했습니다. 마지막 상태: {final_run.status}"
     
     async def _execute_mcp_tool(
         self, 
@@ -214,14 +255,21 @@ class MSLearnMCPClient:
                 if isinstance(content, mcp_types.TextContent):
                     text_results.append(content.text)
             
-            return "\n".join(text_results) if text_results else "결과가 없습니다."
+            final_result = "\n".join(text_results) if text_results else "결과가 없습니다."
+            
+            return final_result
             
         except Exception as e:
-            return f"도구 실행 오류: {str(e)}"
+            error_msg = f"도구 실행 오류: {str(e)}"
+            print(f"❌ {error_msg}")
+            return error_msg
 
 
 async def main():
     """메인 실행 함수"""
+    
+    print("🚀 Microsoft Learn MCP 클라이언트 시작")
+    print("=" * 60)
     
     client = MSLearnMCPClient()
     
@@ -231,13 +279,17 @@ async def main():
         "특히 MCP 서버를 연동해서 개발하는 방법에 대한 정보를 찾아줘"
     )
     
-    print(f"Microsoft Learn MCP 서버에 연결 중...")
-    print(f"서버 URL: {client.mcp_server_url}")
-    print(f"질문: {test_message}")
-    print("-" * 80)
+    print(f"🌐 MCP 서버 URL: {client.mcp_server_url}")
+    print(f"❓ 질문: {test_message}")
+    print("-" * 60)
     
     response = await client.connect_and_run(test_message)
-    print(f"응답:\n{response}")
+    
+    print("=" * 60)
+    print("📄 최종 응답:")
+    print("-" * 60)
+    print(response)
+    print("=" * 60)
 
 
 if __name__ == "__main__":
