@@ -228,7 +228,7 @@ async def main():
     # 테스트 메시지
     test_message = (
         "Azure AI Foundry Agent Service에 대해 설명해줘. "
-        "특히 MCP 서버를 연동해서 개발하는 방법에 대한 정보를 찾아주세요."
+        "특히 MCP 서버를 연동해서 개발하는 방법에 대한 정보를 찾아줘"
     )
     
     print(f"Microsoft Learn MCP 서버에 연결 중...")
