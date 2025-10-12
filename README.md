@@ -1,4 +1,4 @@
-# Azure AI Foundry Agents Labs (Python)
+# Azure AI Foundry: Foundry Agent, MCP & A2A Labs
 
 Azure AI Foundry Agent Service Python SDK를 이용한 핵심 패턴 실습: 단일 에이전트, 다중 에이전트 협업, MCP 서버 연동, 원격 Agent-to-Agent Orchestrator.
 
